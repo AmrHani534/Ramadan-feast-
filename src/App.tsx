@@ -2,10 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { 
-  MapPin, Clock, Calendar, Upload, CheckCircle2, 
+  MapPin, Clock, Calendar, CheckCircle2, 
   CreditCard, Smartphone, Banknote, Share2, Printer,
   Moon, Star, ChevronDown, Info, User, Ticket, LogOut
 } from 'lucide-react';
+import { database, ref, set, get, child } from './firebase';
+
+const QR_CODE_URLS = {
+  telda: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/telda-qr.jpg',
+  vodafone: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/vodafone-qr.jpg',
+  instapay: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/instapay-qr.jpg'
+};
 
 const INVITATION_CODES: Record<string, { name: string, price: number, isAdmin: boolean }> = {
   "RAM-2026-AH485": { name: "Amr Hani", price: 485, isAdmin: true },
@@ -57,9 +64,6 @@ export default function App() {
   const [isShaking, setIsShaking] = useState(false);
   const [verifiedGuest, setVerifiedGuest] = useState<{ enteredName: string, verifiedName: string, code: string, price: number, isAdmin: boolean } | null>(null);
 
-  const [feastDate, setFeastDate] = useState('');
-  const [qrs, setQrs] = useState({ telda: '', vodafone: '', instapay: '' });
-  
   const [preferences, setPreferences] = useState({
     drink: '',
     hawawshi: '',
@@ -71,14 +75,10 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const [isConfirming, setIsConfirming] = useState(false);
+
   // Load admin settings on mount
   useEffect(() => {
-    const savedDate = localStorage.getItem('ramadan_feast_date');
-    if (savedDate) setFeastDate(savedDate);
-
-    const savedQrs = localStorage.getItem('ramadan_feast_qrs');
-    if (savedQrs) setQrs(JSON.parse(savedQrs));
-    
     // Check if current user has saved preferences
     const savedGuestData = sessionStorage.getItem('ramadan_verified_guest');
     if (savedGuestData) {
@@ -86,14 +86,27 @@ export default function App() {
       setVerifiedGuest(parsedGuest);
       setIsAuthenticated(true);
       
-      const savedPrefs = localStorage.getItem(`ramadan_prefs_${parsedGuest.verifiedName}`);
-      if (savedPrefs) {
-        setPreferences(JSON.parse(savedPrefs));
-      }
+      const loadPrefs = async () => {
+        if (!database) return;
+        try {
+          const snapshot = await get(child(ref(database), `guestPreferences/${parsedGuest.code}`));
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            setPreferences({
+              drink: data.drink || '',
+              hawawshi: data.hawawshi || '',
+              snack: data.snack || '',
+              notes: data.notes || '',
+              paymentMethod: data.paymentMethod || ''
+            });
+          }
+        } catch (error) {
+          console.error('Error loading preferences:', error);
+        }
+      };
+      loadPrefs();
     }
   }, []);
-
-  const isAdmin = verifiedGuest?.isAdmin;
 
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,18 +152,33 @@ export default function App() {
       });
 
       // Load their preferences if they exist
-      const savedPrefs = localStorage.getItem(`ramadan_prefs_${guestData.name}`);
-      if (savedPrefs) {
-        setPreferences(JSON.parse(savedPrefs));
-      } else {
-        setPreferences({
-          drink: '',
-          hawawshi: '',
-          snack: '',
-          notes: '',
-          paymentMethod: ''
-        });
-      }
+      const loadPrefs = async () => {
+        if (!database) return;
+        try {
+          const snapshot = await get(child(ref(database), `guestPreferences/${trimmedCode}`));
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            setPreferences({
+              drink: data.drink || '',
+              hawawshi: data.hawawshi || '',
+              snack: data.snack || '',
+              notes: data.notes || '',
+              paymentMethod: data.paymentMethod || ''
+            });
+          } else {
+            setPreferences({
+              drink: '',
+              hawawshi: '',
+              snack: '',
+              notes: '',
+              paymentMethod: ''
+            });
+          }
+        } catch (error) {
+          console.error('Error loading preferences:', error);
+        }
+      };
+      loadPrefs();
       
       setIsAuthenticated(true);
     } else {
@@ -167,23 +195,6 @@ export default function App() {
     setAuthName('');
     setAuthCode('');
     sessionStorage.removeItem('ramadan_verified_guest');
-  };
-
-  const handleImageUpload = (method: keyof typeof qrs) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setQrs(prev => ({ ...prev, [method]: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const saveAdminSettings = () => {
-    localStorage.setItem('ramadan_feast_date', feastDate);
-    localStorage.setItem('ramadan_feast_qrs', JSON.stringify(qrs));
-    alert('Settings saved successfully! ✨');
   };
 
   const calculateTotal = () => {
@@ -206,18 +217,36 @@ export default function App() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (validateForm() && verifiedGuest) {
-      localStorage.setItem(`ramadan_prefs_${verifiedGuest.verifiedName}`, JSON.stringify(preferences));
+      if (!database) {
+        alert('Firebase is not configured. Please update src/firebase.ts');
+        return;
+      }
       
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#D4AF37', '#5B2C6F', '#50C878']
-      });
-      
-      setShowSuccess(true);
+      setIsConfirming(true);
+      try {
+        await set(ref(database, `guestPreferences/${verifiedGuest.code}`), {
+          ...preferences,
+          name: verifiedGuest.verifiedName,
+          timestamp: new Date().toISOString(),
+          confirmed: true
+        });
+        
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#D4AF37', '#5B2C6F', '#50C878']
+        });
+        
+        setShowSuccess(true);
+      } catch (error) {
+        console.error('Error saving preferences:', error);
+        alert('❌ Error saving preferences. Please check your Firebase configuration.');
+      } finally {
+        setIsConfirming(false);
+      }
     } else {
       // Scroll to first error
       const firstError = document.querySelector('.text-red-500');
@@ -359,67 +388,7 @@ export default function App() {
                 </div>
               </motion.section>
 
-              {/* Admin Panel */}
-        <AnimatePresence>
-          {isAdmin && (
-            <motion.section 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="glass-card p-6 md:p-8 mb-8 border-ramadan-secondary/50 overflow-hidden no-print"
-            >
-              <h3 className="text-2xl font-english-serif text-ramadan-secondary mb-6 flex items-center gap-2">
-                ⚙️ Host Settings
-              </h3>
-              
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Set Feast Date</label>
-                  <input 
-                    type="date" 
-                    value={feastDate}
-                    onChange={(e) => setFeastDate(e.target.value)}
-                    className="w-full p-3 rounded-xl border-2 border-ramadan-secondary/30 focus:border-ramadan-secondary focus:outline-none bg-white/50"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {(['telda', 'vodafone', 'instapay'] as const).map((method) => (
-                    <div key={method} className="border-2 border-dashed border-ramadan-secondary/30 rounded-xl p-4 text-center hover:bg-white/50 transition-colors relative">
-                      <label className="cursor-pointer block">
-                        <Upload className="mx-auto mb-2 text-ramadan-secondary" />
-                        <span className="text-sm font-medium text-gray-600 capitalize">{method} QR</span>
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="hidden" 
-                          onChange={handleImageUpload(method)}
-                        />
-                      </label>
-                      {qrs[method] && (
-                        <div className="mt-2 relative group">
-                          <img src={qrs[method]} alt={`${method} QR`} className="w-full h-32 object-contain rounded-lg" />
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
-                            <span className="text-white text-xs">Click to change</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <button 
-                  onClick={saveAdminSettings}
-                  className="w-full btn-secondary border-ramadan-secondary text-ramadan-secondary hover:bg-ramadan-secondary/10"
-                >
-                  💾 Save Settings
-                </button>
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
-
-        {/* Feast Details */}
+              {/* Feast Details */}
         <motion.section 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -438,7 +407,7 @@ export default function App() {
               <div>
                 <h4 className="font-semibold text-gray-900">Date</h4>
                 <p className="text-gray-600 mt-1">
-                  {feastDate ? new Date(feastDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : "Date to be announced by host"}
+                  Date to be announced by host
                 </p>
               </div>
             </div>
@@ -687,17 +656,18 @@ export default function App() {
                       <>
                         <p className="text-gray-600 mb-6 mt-2">Scan QR code or click button to pay</p>
                         
-                        {qrs[preferences.paymentMethod as keyof typeof qrs] ? (
+                        {QR_CODE_URLS[preferences.paymentMethod as keyof typeof QR_CODE_URLS] ? (
                           <div className="bg-white p-4 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.1)] mb-6 animate-pulse-glow">
                             <img 
-                              src={qrs[preferences.paymentMethod as keyof typeof qrs]} 
+                              src={QR_CODE_URLS[preferences.paymentMethod as keyof typeof QR_CODE_URLS]} 
                               alt={`${preferences.paymentMethod} QR Code`} 
                               className="w-[200px] h-[200px] object-contain"
                             />
                           </div>
                         ) : (
-                          <div className="w-[200px] h-[200px] bg-gray-100 rounded-2xl flex items-center justify-center mb-6 text-gray-400 text-sm text-center p-4">
-                            QR Code not uploaded by host yet. Please use the link below.
+                          <div className="w-[200px] h-[200px] bg-gray-100 rounded-2xl flex flex-col items-center justify-center mb-6 text-gray-500 text-sm text-center p-4">
+                            <p className="text-lg mb-2">⚠️ QR Code not available yet</p>
+                            <p>Please pay via the link below or contact the host</p>
                           </div>
                         )}
 
@@ -732,9 +702,10 @@ export default function App() {
             >
               <button 
                 onClick={handleConfirm}
-                className="w-full btn-primary text-lg py-4 shadow-[0_10px_30px_rgba(91,44,111,0.3)]"
+                disabled={isConfirming}
+                className="w-full btn-primary text-lg py-4 shadow-[0_10px_30px_rgba(91,44,111,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                ✅ Confirm Attendance & Preferences
+                {isConfirming ? '⏳ Confirming...' : '✅ Confirm Attendance & Preferences'}
               </button>
             </motion.div>
           )}
