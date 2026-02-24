@@ -23,9 +23,9 @@ const INVITATION_CODES: Record<string, { name: string, price: number, isAdmin: b
 };
 
 const DRINKS = [
-  { id: 'water', emoji: '💧', arabic: 'مياه طبيعية إيلانو', english: 'Natural Water Elano' },
-  { id: 'pepsi', emoji: '🥤', arabic: 'بيبسي', english: 'Pepsi' },
-  { id: 'schweppes', emoji: '🍹', arabic: 'شويبس رمان', english: 'Schweppes Pomegranate' },
+  { id: 'sobia', emoji: '🥤', arabic: 'سوبيا', english: 'Sobia (2L)' },
+  { id: 'pepsi', emoji: '🥤', arabic: 'بيبسي 1.5 لتر', english: 'Pepsi (1.5L)' },
+  { id: 'schweppes', emoji: '🍹', arabic: 'شويبس رمان 0.95 لتر', english: 'Schweppes Pomegranate (0.95L)' },
 ];
 
 const HAWAWSHI_PREFS = [
@@ -349,9 +349,6 @@ export default function App() {
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-3">
-                    <div className="bg-white text-ramadan-primary px-4 py-2 rounded-xl font-bold text-lg shadow-md">
-                      Amount to pay: {verifiedGuest?.price} L.E.
-                    </div>
                     <button 
                       onClick={handleLogout}
                       className="text-white/80 hover:text-white flex items-center gap-1 text-sm transition-colors"
@@ -461,8 +458,7 @@ export default function App() {
                 <MapPin size={24} />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-900">Location</h4>
-                <p className="text-gray-600 mt-1 mb-3">Villa in New Cairo</p>
+                <h4 className="font-semibold text-gray-900 mb-3">Location</h4>
                 <a 
                   href="https://maps.app.goo.gl/ufywaYtTVKeChWUY8" 
                   target="_blank" 
@@ -674,7 +670,10 @@ export default function App() {
                     exit={{ opacity: 0, scale: 0.95 }}
                     className="bg-white/60 p-6 rounded-2xl border border-white/80 flex flex-col items-center text-center"
                   >
-                    <div className="text-3xl font-bold text-ramadan-primary mb-2">
+                    <div className="text-gray-600 font-medium mb-1 flex items-center gap-2">
+                      <span className="text-xl">💰</span> Total Amount to Pay
+                    </div>
+                    <div className="text-4xl font-bold text-ramadan-primary mb-2">
                       {calculateTotal()} L.E.
                     </div>
                     
@@ -686,7 +685,7 @@ export default function App() {
 
                     {preferences.paymentMethod !== 'cash' ? (
                       <>
-                        <p className="text-gray-600 mb-6">Scan QR code or click button to pay</p>
+                        <p className="text-gray-600 mb-6 mt-2">Scan QR code or click button to pay</p>
                         
                         {qrs[preferences.paymentMethod as keyof typeof qrs] ? (
                           <div className="bg-white p-4 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.1)] mb-6 animate-pulse-glow">
