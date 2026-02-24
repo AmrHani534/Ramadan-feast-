@@ -210,7 +210,7 @@ export default function App() {
       setIsConfirming(true);
       try {
         // Save to Google Sheets
-        const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwu5cxdr80sL5ilkxEbFSl0qJGFQeLXbQKUKZe9MbcqoLrj1qfF3zbCq7TVHvdR5w47aw/exec";
         if (!GOOGLE_SCRIPT_URL) {
           alert('Google Sheets URL is not configured.');
           setIsConfirming(false);
