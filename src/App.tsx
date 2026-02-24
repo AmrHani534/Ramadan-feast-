@@ -9,9 +9,9 @@ import {
 import { database, ref, set, get, child } from './firebase';
 
 const QR_CODE_URLS = {
-  telda: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/telda-qr.jpg',
-  vodafone: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/vodafone-qr.jpg',
-  instapay: 'https://raw.githubusercontent.com/AmrHani534/ramadan-feast.vercel.app/main/instapay-qr.jpg'
+  telda: 'https://raw.githubusercontent.com/AmrHani534/Ramadan-feast-/main/telda-qr.jpg',
+  vodafone: 'https://raw.githubusercontent.com/AmrHani534/Ramadan-feast-/main/vodafone-qr.jpg',
+  instapay: 'https://raw.githubusercontent.com/AmrHani534/Ramadan-feast-/main/instapay-qr.jpg'
 };
 
 const INVITATION_CODES: Record<string, { name: string, price: number, isAdmin: boolean }> = {
@@ -68,14 +68,20 @@ export default function App() {
     drink: '',
     hawawshi: '',
     snack: '',
-    notes: '',
-    paymentMethod: ''
+    notes: ''
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [isConfirming, setIsConfirming] = useState(false);
+  const [expandedPayment, setExpandedPayment] = useState<string | null>(null);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [isPreferencesCompleted, setIsPreferencesCompleted] = useState(false);
+
+  const togglePayment = (method: string) => {
+    setExpandedPayment(prev => prev === method ? null : method);
+  };
 
   // Load admin settings on mount
   useEffect(() => {
@@ -162,16 +168,14 @@ export default function App() {
               drink: data.drink || '',
               hawawshi: data.hawawshi || '',
               snack: data.snack || '',
-              notes: data.notes || '',
-              paymentMethod: data.paymentMethod || ''
+              notes: data.notes || ''
             });
           } else {
             setPreferences({
               drink: '',
               hawawshi: '',
               snack: '',
-              notes: '',
-              paymentMethod: ''
+              notes: ''
             });
           }
         } catch (error) {
@@ -197,24 +201,29 @@ export default function App() {
     sessionStorage.removeItem('ramadan_verified_guest');
   };
 
-  const calculateTotal = () => {
-    if (!verifiedGuest) return 0;
-    let total = verifiedGuest.price;
-    if (preferences.paymentMethod === 'vodafone') {
-      total += 10;
-    }
-    return total;
-  };
-
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     if (!preferences.drink) newErrors.drink = 'Please select a drink';
     if (!preferences.hawawshi) newErrors.hawawshi = 'Please select your Hawawshi preference';
     if (!preferences.snack) newErrors.snack = 'Please select a snack';
-    if (!preferences.paymentMethod) newErrors.paymentMethod = 'Please select a payment method';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const nextStep = (step: number) => {
+    setWizardStep(step);
+  };
+
+  const previousStep = (step: number) => {
+    setWizardStep(step);
+  };
+
+  const completePreferences = () => {
+    setIsPreferencesCompleted(true);
+    setTimeout(() => {
+      document.getElementById('paymentSection')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   const handleConfirm = async () => {
@@ -226,12 +235,39 @@ export default function App() {
       
       setIsConfirming(true);
       try {
+        // 1. Save to Firebase
         await set(ref(database, `guestPreferences/${verifiedGuest.code}`), {
           ...preferences,
           name: verifiedGuest.verifiedName,
           timestamp: new Date().toISOString(),
           confirmed: true
         });
+
+        // 2. Save to Google Sheets (if URL is configured)
+        const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+        if (GOOGLE_SCRIPT_URL) {
+          try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+              method: 'POST',
+              mode: 'no-cors', // Required to avoid CORS issues with Google Apps Script
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                code: verifiedGuest.code,
+                name: verifiedGuest.verifiedName,
+                drink: DRINKS.find(d => d.id === preferences.drink)?.english || preferences.drink,
+                hawawshi: HAWAWSHI_PREFS.find(h => h.id === preferences.hawawshi)?.english || preferences.hawawshi,
+                snack: SNACKS.find(s => s.id === preferences.snack)?.english || preferences.snack,
+                notes: preferences.notes || 'None',
+                price: verifiedGuest.price
+              })
+            });
+          } catch (sheetError) {
+            console.error('Error saving to Google Sheets:', sheetError);
+            // We don't block the success flow if only sheets fails
+          }
+        }
         
         confetti({
           particleCount: 150,
@@ -243,7 +279,7 @@ export default function App() {
         setShowSuccess(true);
       } catch (error) {
         console.error('Error saving preferences:', error);
-        alert('❌ Error saving preferences. Please check your Firebase configuration.');
+        alert('❌ Error saving preferences. Please check your connection.');
       } finally {
         setIsConfirming(false);
       }
@@ -453,140 +489,189 @@ export default function App() {
 
         {/* Preferences Form */}
         <AnimatePresence>
-          {isAuthenticated && (
+          {isAuthenticated && !isPreferencesCompleted && (
             <motion.section 
+              id="preferencesSection"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               className="glass-card p-6 md:p-8 mb-8"
             >
-              <h3 className="text-2xl font-english-serif text-ramadan-primary mb-6 flex items-center gap-2">
+              <h3 className="text-[1.3rem] font-english-serif text-ramadan-primary mb-6 flex items-center gap-2">
                 <span className="text-ramadan-secondary">3.</span> Your Preferences
               </h3>
 
+              {/* Progress Indicator */}
+              <div className="flex justify-between mb-8 px-0 sm:px-5 relative">
+                <div className="absolute top-[15px] left-[10%] right-[10%] h-[2px] bg-[#E0E0E0] -z-10"></div>
+                <div className="absolute top-[15px] left-[10%] h-[2px] bg-[#D4AF37] -z-10 transition-all duration-300" style={{ width: `${((wizardStep - 1) / 3) * 80}%` }}></div>
+                
+                {[
+                  { step: 1, label: 'Drink' },
+                  { step: 2, label: 'Hawawshi' },
+                  { step: 3, label: 'Snack' },
+                  { step: 4, label: 'Notes' }
+                ].map((item) => (
+                  <div key={item.step} className="flex flex-col items-center flex-1 relative bg-white/0">
+                    <div className={`w-[30px] h-[30px] sm:w-[35px] sm:h-[35px] rounded-full flex items-center justify-center font-bold text-[0.8rem] sm:text-[0.9rem] mb-1 transition-all duration-300 ${wizardStep === item.step ? 'bg-[#D4AF37] text-white' : wizardStep > item.step ? 'bg-[#5B2C6F] text-white' : 'bg-[#E0E0E0] text-[#999]'}`}>
+                      {item.step}
+                    </div>
+                    <span className={`text-[0.7rem] sm:text-[0.75rem] text-center ${wizardStep === item.step ? 'text-[#5B2C6F] font-semibold' : 'text-[#999]'}`}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+
               <div className="space-y-12">
-                {/* Drink */}
-                <div>
-                  <div className="mb-5">
-                    <h4 className="font-arabic-sans font-bold text-[1.4rem] md:text-[1.8rem] text-ramadan-primary mb-2">Favorite Drink</h4>
-                    <div className="w-[50px] h-[3px] bg-ramadan-secondary"></div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {DRINKS.map((drink, index) => (
-                      <motion.div 
-                        key={drink.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`preference-card min-h-[120px] sm:min-h-[180px] ${preferences.drink === drink.id ? 'selected' : ''}`}
-                        onClick={() => setPreferences({...preferences, drink: drink.id})}
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setPreferences({...preferences, drink: drink.id});
-                          }
-                        }}
-                        role="radio"
-                        aria-checked={preferences.drink === drink.id}
+                {/* Step 1: Drink */}
+                {wizardStep === 1 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="wizard-step"
+                  >
+                    <h3 className="text-[1.2rem] text-[#5B2C6F] text-center mb-6">Choose Your Favorite Drink</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                      {DRINKS.map((drink) => (
+                        <div 
+                          key={drink.id}
+                          onClick={() => setPreferences({...preferences, drink: drink.id})}
+                          className={`bg-white border-2 rounded-xl p-5 text-center cursor-pointer transition-all duration-300 relative ${preferences.drink === drink.id ? 'border-[#D4AF37] bg-gradient-to-br from-[#FFFEF7] to-[#FFF9E6] shadow-[0_4px_15px_rgba(212,175,55,0.3)]' : 'border-[#E0E0E0] hover:border-[#D4AF37] hover:-translate-y-1 hover:shadow-[0_4px_12px_rgba(212,175,55,0.2)]'}`}
+                        >
+                          {preferences.drink === drink.id && (
+                            <div className="absolute top-2 right-2 bg-[#D4AF37] text-white w-[22px] h-[22px] rounded-full flex items-center justify-center text-[0.8rem] font-bold">✓</div>
+                          )}
+                          <div className="text-[2.5rem] mb-2">{drink.emoji}</div>
+                          <div className="text-[1rem] font-semibold text-[#333] mb-1">{drink.arabic}</div>
+                          <div className="text-[0.85rem] text-[#666]">{drink.english}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <button 
+                        onClick={() => nextStep(2)}
+                        disabled={!preferences.drink}
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)] disabled:bg-[#CCC] disabled:bg-none disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none"
                       >
-                        <div className="text-[60px] mb-3 leading-none">{drink.emoji}</div>
-                        <div className={`font-arabic-sans font-bold text-[16px] mb-1 ${preferences.drink === drink.id ? 'text-ramadan-secondary' : 'text-gray-800'}`}>{drink.arabic}</div>
-                        <div className={`font-english-sans text-[14px] ${preferences.drink === drink.id ? 'text-ramadan-secondary/80' : 'text-gray-500'}`}>{drink.english}</div>
-                      </motion.div>
-                    ))}
-                  </div>
-                  {errors.drink && <p className="text-red-500 text-sm mt-2">{errors.drink}</p>}
-                </div>
+                        Next
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
 
-                {/* Hawawshi */}
-                <div>
-                  <div className="mb-5">
-                    <h4 className="font-arabic-sans font-bold text-[1.4rem] md:text-[1.8rem] text-ramadan-primary mb-2">Hawawshi Preference</h4>
-                    <div className="w-[50px] h-[3px] bg-ramadan-secondary"></div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {HAWAWSHI_PREFS.map((pref, index) => (
-                      <motion.div 
-                        key={pref.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`preference-card min-h-[150px] sm:min-h-[200px] ${preferences.hawawshi === pref.id ? 'selected' : ''}`}
-                        onClick={() => setPreferences({...preferences, hawawshi: pref.id})}
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setPreferences({...preferences, hawawshi: pref.id});
-                          }
-                        }}
-                        role="radio"
-                        aria-checked={preferences.hawawshi === pref.id}
+                {/* Step 2: Hawawshi */}
+                {wizardStep === 2 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="wizard-step"
+                  >
+                    <h3 className="text-[1.2rem] text-[#5B2C6F] text-center mb-6">Choose Your Hawawshi Preference</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                      {HAWAWSHI_PREFS.map((pref) => (
+                        <div 
+                          key={pref.id}
+                          onClick={() => setPreferences({...preferences, hawawshi: pref.id})}
+                          className={`bg-white border-2 rounded-xl p-8 text-center cursor-pointer transition-all duration-300 relative ${preferences.hawawshi === pref.id ? 'border-[#D4AF37] bg-gradient-to-br from-[#FFFEF7] to-[#FFF9E6] shadow-[0_4px_15px_rgba(212,175,55,0.3)]' : 'border-[#E0E0E0] hover:border-[#D4AF37] hover:-translate-y-1 hover:shadow-[0_4px_12px_rgba(212,175,55,0.2)]'}`}
+                        >
+                          {preferences.hawawshi === pref.id && (
+                            <div className="absolute top-2 right-2 bg-[#D4AF37] text-white w-[22px] h-[22px] rounded-full flex items-center justify-center text-[0.8rem] font-bold">✓</div>
+                          )}
+                          <div className="text-[2.5rem] mb-2">{pref.emoji}</div>
+                          <div className="text-[1rem] font-semibold text-[#333] mb-1">{pref.english}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                      <button 
+                        onClick={() => previousStep(1)}
+                        className="w-full sm:w-auto px-6 py-3 bg-white text-[#5B2C6F] border-2 border-[#5B2C6F] rounded-lg font-semibold text-[0.95rem] transition-all duration-300 hover:bg-[#F5F0F8]"
                       >
-                        <div className="text-[80px] mb-4 leading-none">{pref.emoji}</div>
-                        <div className={`font-arabic-sans font-bold text-[18px] mb-1 ${preferences.hawawshi === pref.id ? 'text-ramadan-secondary' : 'text-gray-800'}`}>{pref.arabic}</div>
-                        <div className={`font-english-sans text-[15px] ${preferences.hawawshi === pref.id ? 'text-ramadan-secondary/80' : 'text-gray-500'}`}>{pref.english}</div>
-                      </motion.div>
-                    ))}
-                  </div>
-                  {errors.hawawshi && <p className="text-red-500 text-sm mt-2">{errors.hawawshi}</p>}
-                </div>
-
-                {/* Snack */}
-                <div>
-                  <div className="mb-5">
-                    <h4 className="font-arabic-sans font-bold text-[1.4rem] md:text-[1.8rem] text-ramadan-primary mb-2">Favorite Snack</h4>
-                    <div className="w-[50px] h-[3px] bg-ramadan-secondary"></div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {SNACKS.map((snack, index) => (
-                      <motion.div 
-                        key={snack.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`preference-card min-h-[120px] sm:min-h-[150px] ${preferences.snack === snack.id ? 'selected' : ''}`}
-                        onClick={() => setPreferences({...preferences, snack: snack.id})}
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setPreferences({...preferences, snack: snack.id});
-                          }
-                        }}
-                        role="radio"
-                        aria-checked={preferences.snack === snack.id}
+                        Back
+                      </button>
+                      <button 
+                        onClick={() => nextStep(3)}
+                        disabled={!preferences.hawawshi}
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)] disabled:bg-[#CCC] disabled:bg-none disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none"
                       >
-                        <div className="text-[50px] mb-2 leading-none">{snack.emoji}</div>
-                        <div className={`font-arabic-sans font-bold text-[16px] mb-1 ${preferences.snack === snack.id ? 'text-ramadan-secondary' : 'text-gray-800'}`}>{snack.arabic}</div>
-                        <div className={`font-english-sans text-[14px] ${preferences.snack === snack.id ? 'text-ramadan-secondary/80' : 'text-gray-500'}`}>{snack.english}</div>
-                      </motion.div>
-                    ))}
-                  </div>
-                  {errors.snack && <p className="text-red-500 text-sm mt-2">{errors.snack}</p>}
-                </div>
+                        Next
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
 
-                {/* Notes */}
-                <div>
-                  <div className="mb-5">
-                    <h4 className="font-arabic-sans font-bold text-[1.4rem] md:text-[1.8rem] text-ramadan-primary mb-2 flex items-center gap-2">
-                      📝 Additional Notes
-                    </h4>
-                    <div className="w-[50px] h-[3px] bg-ramadan-secondary"></div>
-                  </div>
-                  <div className="relative group">
+                {/* Step 3: Snack */}
+                {wizardStep === 3 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="wizard-step"
+                  >
+                    <h3 className="text-[1.2rem] text-[#5B2C6F] text-center mb-6">Choose Your Favorite Snack</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                      {SNACKS.map((snack) => (
+                        <div 
+                          key={snack.id}
+                          onClick={() => setPreferences({...preferences, snack: snack.id})}
+                          className={`bg-white border-2 rounded-xl p-5 text-center cursor-pointer transition-all duration-300 relative ${preferences.snack === snack.id ? 'border-[#D4AF37] bg-gradient-to-br from-[#FFFEF7] to-[#FFF9E6] shadow-[0_4px_15px_rgba(212,175,55,0.3)]' : 'border-[#E0E0E0] hover:border-[#D4AF37] hover:-translate-y-1 hover:shadow-[0_4px_12px_rgba(212,175,55,0.2)]'}`}
+                        >
+                          {preferences.snack === snack.id && (
+                            <div className="absolute top-2 right-2 bg-[#D4AF37] text-white w-[22px] h-[22px] rounded-full flex items-center justify-center text-[0.8rem] font-bold">✓</div>
+                          )}
+                          <div className="text-[2.5rem] mb-2">{snack.emoji}</div>
+                          <div className="text-[1rem] font-semibold text-[#333] mb-1">{snack.arabic}</div>
+                          <div className="text-[0.85rem] text-[#666]">{snack.english}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                      <button 
+                        onClick={() => previousStep(2)}
+                        className="w-full sm:w-auto px-6 py-3 bg-white text-[#5B2C6F] border-2 border-[#5B2C6F] rounded-lg font-semibold text-[0.95rem] transition-all duration-300 hover:bg-[#F5F0F8]"
+                      >
+                        Back
+                      </button>
+                      <button 
+                        onClick={() => nextStep(4)}
+                        disabled={!preferences.snack}
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)] disabled:bg-[#CCC] disabled:bg-none disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Step 4: Notes */}
+                {wizardStep === 4 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="wizard-step"
+                  >
+                    <h3 className="text-[1.2rem] text-[#5B2C6F] text-center mb-6">Additional Notes (Optional)</h3>
                     <textarea 
                       value={preferences.notes}
                       onChange={(e) => setPreferences({...preferences, notes: e.target.value})}
                       placeholder="Any special requests or dietary restrictions?"
-                      className="w-full p-5 rounded-[15px] border-2 border-gray-200 bg-white/80 focus:outline-none focus:border-ramadan-secondary focus:bg-white transition-all duration-300 min-h-[120px] resize-y shadow-sm group-hover:shadow-md font-english-sans text-gray-800 placeholder:text-gray-400 placeholder:font-english-serif placeholder:italic"
+                      className="w-full p-4 border-2 border-[#E0E0E0] rounded-xl text-[0.95rem] font-english-sans resize-y mb-6 transition-colors duration-300 focus:outline-none focus:border-[#D4AF37]"
+                      rows={5}
                     ></textarea>
-                    <div className="absolute bottom-4 right-4 text-xs text-gray-400 font-english-sans">
-                      {preferences.notes.length} chars
+                    <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                      <button 
+                        onClick={() => previousStep(3)}
+                        className="w-full sm:w-auto px-6 py-3 bg-white text-[#5B2C6F] border-2 border-[#5B2C6F] rounded-lg font-semibold text-[0.95rem] transition-all duration-300 hover:bg-[#F5F0F8]"
+                      >
+                        Back
+                      </button>
+                      <button 
+                        onClick={completePreferences}
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)]"
+                      >
+                        Continue to Payment
+                      </button>
                     </div>
-                  </div>
-                </div>
+                  </motion.div>
+                )}
               </div>
             </motion.section>
           )}
@@ -594,107 +679,161 @@ export default function App() {
 
         {/* Payment Section */}
         <AnimatePresence>
-          {isAuthenticated && (
+          {isAuthenticated && isPreferencesCompleted && (
             <motion.section 
+              id="paymentSection"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               className="glass-card p-6 md:p-8 mb-8"
             >
-              <h3 className="text-2xl font-english-serif text-ramadan-primary mb-6 flex items-center gap-2">
+              <h3 className="text-[1.3rem] font-english-serif text-ramadan-primary mb-6 flex items-center gap-2">
                 <span className="text-ramadan-secondary">4.</span> Payment
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-                {PAYMENT_METHODS.map(method => {
-                  const Icon = method.icon;
-                  return (
-                    <label 
-                      key={method.id}
-                      className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-2 text-center ${preferences.paymentMethod === method.id ? 'border-ramadan-primary bg-ramadan-primary/5' : 'border-transparent bg-white/50 hover:bg-white/80'}`}
-                    >
-                      <input 
-                        type="radio" 
-                        name="paymentMethod" 
-                        value={method.id}
-                        checked={preferences.paymentMethod === method.id}
-                        onChange={(e) => setPreferences({...preferences, paymentMethod: e.target.value})}
-                        className="hidden"
-                      />
-                      <Icon className={preferences.paymentMethod === method.id ? 'text-ramadan-primary' : 'text-gray-500'} />
-                      <span className="font-medium text-sm">{method.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {errors.paymentMethod && <p className="text-red-500 text-sm -mt-4 mb-6">{errors.paymentMethod}</p>}
+              <div className="space-y-4">
+                <p className="text-center text-[1rem] text-[#5B2C6F] mb-5">
+                  Total Amount: <strong>{verifiedGuest?.price} L.E.</strong>
+                </p>
 
-              {/* Dynamic Payment Display */}
-              <AnimatePresence mode="wait">
-                {preferences.paymentMethod && (
-                  <motion.div 
-                    key={preferences.paymentMethod}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-white/60 p-6 rounded-2xl border border-white/80 flex flex-col items-center text-center"
+                {/* Telda */}
+                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                  <div 
+                    onClick={() => togglePayment('telda')}
+                    className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'telda' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
                   >
-                    <div className="text-gray-600 font-medium mb-1 flex items-center gap-2">
-                      <span className="text-xl">💰</span> Total Amount to Pay
+                    <div className="flex items-center gap-2">
+                      <span className="text-[1.1rem] font-semibold text-[#333]">Telda</span>
                     </div>
-                    <div className="text-4xl font-bold text-ramadan-primary mb-2">
-                      {calculateTotal()} L.E.
+                    <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'telda' ? 'rotate-180' : ''}`} size={20} />
+                  </div>
+                  
+                  <AnimatePresence>
+                    {expandedPayment === 'telda' && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-5 bg-white border-t border-[#F0F0F0]">
+                          <img src={QR_CODE_URLS.telda} alt="Telda QR Code" className="block w-full max-w-[220px] h-auto mx-auto mb-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.1)]" />
+                          <p className="text-center text-[1.4rem] font-bold text-[#5B2C6F] mt-2 mb-1">Amount: {verifiedGuest?.price} L.E.</p>
+                          <p className="text-center text-[#666] text-[0.85rem] mb-4">Scan QR code or click button to pay</p>
+                          <a href="https://telda.me/amrhanygomaa" target="_blank" rel="noopener noreferrer" className="block w-full max-w-[300px] mx-auto p-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white text-center no-underline rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)]">
+                            Pay via Telda
+                          </a>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Vodafone Cash */}
+                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                  <div 
+                    onClick={() => togglePayment('vodafone')}
+                    className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'vodafone' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[1.1rem] font-semibold text-[#333]">Vodafone Cash</span>
+                      <span className="text-[0.75rem] bg-[#FFE5E5] text-[#D32F2F] py-1 px-2 rounded-lg font-medium">+10 L.E. fees</span>
                     </div>
-                    
-                    {preferences.paymentMethod === 'vodafone' && (
-                      <div className="text-sm text-ramadan-secondary font-medium mb-4 flex items-center gap-1">
-                        <Info size={16} /> Includes +10 L.E. transfer fees
-                      </div>
+                    <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'vodafone' ? 'rotate-180' : ''}`} size={20} />
+                  </div>
+                  
+                  <AnimatePresence>
+                    {expandedPayment === 'vodafone' && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-5 bg-white border-t border-[#F0F0F0]">
+                          <img src={QR_CODE_URLS.vodafone} alt="Vodafone Cash QR Code" className="block w-full max-w-[220px] h-auto mx-auto mb-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.1)]" />
+                          <p className="text-center text-[1.4rem] font-bold text-[#5B2C6F] mt-2 mb-1">Amount: {(verifiedGuest?.price || 0) + 10} L.E. <span className="text-[0.9rem] font-normal">(includes fees)</span></p>
+                          <p className="text-center text-[#666] text-[0.85rem] mb-4">Scan QR code or click button to pay</p>
+                          <a href="http://vf.eg/vfcash?id=mt&qrId=aqh175" target="_blank" rel="noopener noreferrer" className="block w-full max-w-[300px] mx-auto p-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white text-center no-underline rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)]">
+                            Pay via Vodafone Cash
+                          </a>
+                        </div>
+                      </motion.div>
                     )}
+                  </AnimatePresence>
+                </div>
 
-                    {preferences.paymentMethod !== 'cash' ? (
-                      <>
-                        <p className="text-gray-600 mb-6 mt-2">Scan QR code or click button to pay</p>
-                        
-                        {QR_CODE_URLS[preferences.paymentMethod as keyof typeof QR_CODE_URLS] ? (
-                          <div className="bg-white p-4 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.1)] mb-6 animate-pulse-glow">
-                            <img 
-                              src={QR_CODE_URLS[preferences.paymentMethod as keyof typeof QR_CODE_URLS]} 
-                              alt={`${preferences.paymentMethod} QR Code`} 
-                              className="w-[200px] h-[200px] object-contain"
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-[200px] h-[200px] bg-gray-100 rounded-2xl flex flex-col items-center justify-center mb-6 text-gray-500 text-sm text-center p-4">
-                            <p className="text-lg mb-2">⚠️ QR Code not available yet</p>
-                            <p>Please pay via the link below or contact the host</p>
-                          </div>
-                        )}
-
-                        <a 
-                          href={PAYMENT_METHODS.find(m => m.id === preferences.paymentMethod)?.link || '#'} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="btn-primary w-full max-w-xs"
-                        >
-                          Pay via {PAYMENT_METHODS.find(m => m.id === preferences.paymentMethod)?.label.split(' ')[0]}
-                        </a>
-                      </>
-                    ) : (
-                      <p className="text-gray-600 mt-2 text-lg">
-                        Please bring the exact amount in cash to the event.
-                      </p>
+                {/* Instapay */}
+                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                  <div 
+                    onClick={() => togglePayment('instapay')}
+                    className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'instapay' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[1.1rem] font-semibold text-[#333]">Instapay</span>
+                    </div>
+                    <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'instapay' ? 'rotate-180' : ''}`} size={20} />
+                  </div>
+                  
+                  <AnimatePresence>
+                    {expandedPayment === 'instapay' && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-5 bg-white border-t border-[#F0F0F0]">
+                          <img src={QR_CODE_URLS.instapay} alt="Instapay QR Code" className="block w-full max-w-[220px] h-auto mx-auto mb-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.1)]" />
+                          <p className="text-center text-[1.4rem] font-bold text-[#5B2C6F] mt-2 mb-1">Amount: {verifiedGuest?.price} L.E.</p>
+                          <p className="text-center text-[#666] text-[0.85rem] mb-4">Scan QR code or click button to pay</p>
+                          <a href="https://ipn.eg/S/amrhany2022/instapay/5k2I2k" target="_blank" rel="noopener noreferrer" className="block w-full max-w-[300px] mx-auto p-3 bg-gradient-to-br from-[#5B2C6F] to-[#7B3F8F] text-white text-center no-underline rounded-lg font-semibold text-[0.95rem] transition-all duration-300 shadow-[0_3px_10px_rgba(91,44,111,0.3)] hover:-translate-y-0.5 hover:shadow-[0_5px_15px_rgba(91,44,111,0.4)]">
+                            Pay via Instapay
+                          </a>
+                        </div>
+                      </motion.div>
                     )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  </AnimatePresence>
+                </div>
+
+                {/* Cash */}
+                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                  <div 
+                    onClick={() => togglePayment('cash')}
+                    className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'cash' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[1.1rem] font-semibold text-[#333]">Cash (Pay at Event)</span>
+                    </div>
+                    <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'cash' ? 'rotate-180' : ''}`} size={20} />
+                  </div>
+                  
+                  <AnimatePresence>
+                    {expandedPayment === 'cash' && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-5 bg-white text-center border-t border-[#F0F0F0]">
+                          <p className="text-[1rem] text-[#333] mb-2">
+                            Please bring <strong className="text-[#5B2C6F] text-[1.4rem]">{verifiedGuest?.price} L.E.</strong> cash to the event.
+                          </p>
+                          <p className="text-[0.85rem] text-[#666]">No advance payment needed</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
             </motion.section>
           )}
         </AnimatePresence>
 
         {/* Confirm Button */}
         <AnimatePresence>
-          {isAuthenticated && (
+          {isAuthenticated && isPreferencesCompleted && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -775,7 +914,7 @@ export default function App() {
                   </div>
                   <div className="flex justify-between border-b border-gray-100 pb-2">
                     <span className="text-gray-500">Payment</span>
-                    <span className="font-semibold text-gray-900">{calculateTotal()} L.E. ({PAYMENT_METHODS.find(m => m.id === preferences.paymentMethod)?.label.split(' ')[0]})</span>
+                    <span className="font-semibold text-gray-900">{verifiedGuest?.price} L.E.</span>
                   </div>
                   <div className="flex justify-between border-b border-gray-100 pb-2">
                     <span className="text-gray-500">Drink</span>
