@@ -6,7 +6,6 @@ import {
   CreditCard, Smartphone, Banknote, Share2, Printer,
   Moon, Star, ChevronDown, Info, User, Ticket, LogOut
 } from 'lucide-react';
-import { database, ref, set, get, child } from './firebase';
 
 const QR_CODE_URLS = {
   telda: 'https://raw.githubusercontent.com/AmrHani534/Ramadan-feast-/main/telda-qr.jpg',
@@ -91,26 +90,6 @@ export default function App() {
       const parsedGuest = JSON.parse(savedGuestData);
       setVerifiedGuest(parsedGuest);
       setIsAuthenticated(true);
-      
-      const loadPrefs = async () => {
-        if (!database) return;
-        try {
-          const snapshot = await get(child(ref(database), `guestPreferences/${parsedGuest.code}`));
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            setPreferences({
-              drink: data.drink || '',
-              hawawshi: data.hawawshi || '',
-              snack: data.snack || '',
-              notes: data.notes || '',
-              paymentMethod: data.paymentMethod || ''
-            });
-          }
-        } catch (error) {
-          console.error('Error loading preferences:', error);
-        }
-      };
-      loadPrefs();
     }
   }, []);
 
@@ -228,46 +207,32 @@ export default function App() {
 
   const handleConfirm = async () => {
     if (validateForm() && verifiedGuest) {
-      if (!database) {
-        alert('Firebase is not configured. Please update src/firebase.ts');
-        return;
-      }
-      
       setIsConfirming(true);
       try {
-        // 1. Save to Firebase
-        await set(ref(database, `guestPreferences/${verifiedGuest.code}`), {
-          ...preferences,
-          name: verifiedGuest.verifiedName,
-          timestamp: new Date().toISOString(),
-          confirmed: true
-        });
-
-        // 2. Save to Google Sheets (if URL is configured)
+        // Save to Google Sheets
         const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
-        if (GOOGLE_SCRIPT_URL) {
-          try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-              method: 'POST',
-              mode: 'no-cors', // Required to avoid CORS issues with Google Apps Script
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                code: verifiedGuest.code,
-                name: verifiedGuest.verifiedName,
-                drink: DRINKS.find(d => d.id === preferences.drink)?.english || preferences.drink,
-                hawawshi: HAWAWSHI_PREFS.find(h => h.id === preferences.hawawshi)?.english || preferences.hawawshi,
-                snack: SNACKS.find(s => s.id === preferences.snack)?.english || preferences.snack,
-                notes: preferences.notes || 'None',
-                price: verifiedGuest.price
-              })
-            });
-          } catch (sheetError) {
-            console.error('Error saving to Google Sheets:', sheetError);
-            // We don't block the success flow if only sheets fails
-          }
+        if (!GOOGLE_SCRIPT_URL) {
+          alert('Google Sheets URL is not configured.');
+          setIsConfirming(false);
+          return;
         }
+
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors', // Required to avoid CORS issues with Google Apps Script
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code: verifiedGuest.code,
+            name: verifiedGuest.verifiedName,
+            drink: DRINKS.find(d => d.id === preferences.drink)?.english || preferences.drink,
+            hawawshi: HAWAWSHI_PREFS.find(h => h.id === preferences.hawawshi)?.english || preferences.hawawshi,
+            snack: SNACKS.find(s => s.id === preferences.snack)?.english || preferences.snack,
+            notes: preferences.notes || 'None',
+            price: verifiedGuest.price
+          })
+        });
         
         confetti({
           particleCount: 150,
