@@ -67,7 +67,8 @@ export default function App() {
     drink: '',
     hawawshi: '',
     snack: '',
-    notes: ''
+    notes: '',
+    paymentMethod: ''
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -80,6 +81,7 @@ export default function App() {
 
   const togglePayment = (method: string) => {
     setExpandedPayment(prev => prev === method ? null : method);
+    setPreferences(prev => ({ ...prev, paymentMethod: method }));
   };
 
   // Load admin settings on mount
@@ -185,6 +187,7 @@ export default function App() {
     if (!preferences.drink) newErrors.drink = 'Please select a drink';
     if (!preferences.hawawshi) newErrors.hawawshi = 'Please select your Hawawshi preference';
     if (!preferences.snack) newErrors.snack = 'Please select a snack';
+    if (!preferences.paymentMethod) newErrors.paymentMethod = 'Please select a payment method';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -210,7 +213,7 @@ export default function App() {
       setIsConfirming(true);
       try {
         // Save to Google Sheets
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwu5cxdr80sL5ilkxEbFSl0qJGFQeLXbQKUKZe9MbcqoLrj1qfF3zbCq7TVHvdR5w47aw/exec";
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzK_rOi99YHv7f7rhu_DQNa2OmFcA71wYj_ia6fP_ZzVWzYtTbpusTGfCKKjbBGu2rYTQ/exec";
         if (!GOOGLE_SCRIPT_URL) {
           alert('Google Sheets URL is not configured.');
           setIsConfirming(false);
@@ -230,7 +233,8 @@ export default function App() {
             hawawshi: HAWAWSHI_PREFS.find(h => h.id === preferences.hawawshi)?.english || preferences.hawawshi,
             snack: SNACKS.find(s => s.id === preferences.snack)?.english || preferences.snack,
             notes: preferences.notes || 'None',
-            price: verifiedGuest.price
+            price: verifiedGuest.price,
+            paymentMethod: preferences.paymentMethod
           })
         });
         
@@ -662,12 +666,15 @@ export default function App() {
                 </p>
 
                 {/* Telda */}
-                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                <div className={`bg-white border-2 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)] ${preferences.paymentMethod === 'telda' ? 'border-[#D4AF37] shadow-[0_4px_12px_rgba(212,175,55,0.15)]' : 'border-[#E0E0E0] hover:border-[#D4AF37]'}`}>
                   <div 
                     onClick={() => togglePayment('telda')}
                     className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'telda' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
                   >
                     <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${preferences.paymentMethod === 'telda' ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-[#CCC]'}`}>
+                        {preferences.paymentMethod === 'telda' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      </div>
                       <span className="text-[1.1rem] font-semibold text-[#333]">Telda</span>
                     </div>
                     <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'telda' ? 'rotate-180' : ''}`} size={20} />
@@ -695,12 +702,15 @@ export default function App() {
                 </div>
 
                 {/* Vodafone Cash */}
-                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                <div className={`bg-white border-2 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)] ${preferences.paymentMethod === 'vodafone' ? 'border-[#D4AF37] shadow-[0_4px_12px_rgba(212,175,55,0.15)]' : 'border-[#E0E0E0] hover:border-[#D4AF37]'}`}>
                   <div 
                     onClick={() => togglePayment('vodafone')}
                     className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'vodafone' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
                   >
                     <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${preferences.paymentMethod === 'vodafone' ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-[#CCC]'}`}>
+                        {preferences.paymentMethod === 'vodafone' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      </div>
                       <span className="text-[1.1rem] font-semibold text-[#333]">Vodafone Cash</span>
                       <span className="text-[0.75rem] bg-[#FFE5E5] text-[#D32F2F] py-1 px-2 rounded-lg font-medium">+10 L.E. fees</span>
                     </div>
@@ -729,12 +739,15 @@ export default function App() {
                 </div>
 
                 {/* Instapay */}
-                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                <div className={`bg-white border-2 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)] ${preferences.paymentMethod === 'instapay' ? 'border-[#D4AF37] shadow-[0_4px_12px_rgba(212,175,55,0.15)]' : 'border-[#E0E0E0] hover:border-[#D4AF37]'}`}>
                   <div 
                     onClick={() => togglePayment('instapay')}
                     className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'instapay' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
                   >
                     <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${preferences.paymentMethod === 'instapay' ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-[#CCC]'}`}>
+                        {preferences.paymentMethod === 'instapay' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      </div>
                       <span className="text-[1.1rem] font-semibold text-[#333]">Instapay</span>
                     </div>
                     <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'instapay' ? 'rotate-180' : ''}`} size={20} />
@@ -762,12 +775,15 @@ export default function App() {
                 </div>
 
                 {/* Cash */}
-                <div className="bg-white border-2 border-[#E0E0E0] rounded-xl overflow-hidden transition-all duration-300 hover:border-[#D4AF37] hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)]">
+                <div className={`bg-white border-2 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-[0_4px_12px_rgba(212,175,55,0.15)] ${preferences.paymentMethod === 'cash' ? 'border-[#D4AF37] shadow-[0_4px_12px_rgba(212,175,55,0.15)]' : 'border-[#E0E0E0] hover:border-[#D4AF37]'}`}>
                   <div 
                     onClick={() => togglePayment('cash')}
                     className={`flex justify-between items-center p-4 cursor-pointer transition-colors duration-300 ${expandedPayment === 'cash' ? 'bg-[#F0E6F6] border-b-2 border-[#E0E0E0]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F5]'}`}
                   >
                     <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${preferences.paymentMethod === 'cash' ? 'border-[#D4AF37] bg-[#D4AF37]' : 'border-[#CCC]'}`}>
+                        {preferences.paymentMethod === 'cash' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      </div>
                       <span className="text-[1.1rem] font-semibold text-[#333]">Cash (Pay at Event)</span>
                     </div>
                     <ChevronDown className={`text-[#666] transition-transform duration-300 ${expandedPayment === 'cash' ? 'rotate-180' : ''}`} size={20} />
@@ -804,6 +820,9 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               className="mb-12 no-print"
             >
+              {errors.paymentMethod && (
+                <p className="text-red-500 text-center mb-4 font-bold">{errors.paymentMethod}</p>
+              )}
               <button 
                 onClick={handleConfirm}
                 disabled={isConfirming}
