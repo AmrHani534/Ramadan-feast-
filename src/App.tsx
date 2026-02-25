@@ -74,6 +74,12 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const [showCheckTicketModal, setShowCheckTicketModal] = useState(false);
+  const [checkTicketCode, setCheckTicketCode] = useState('');
+  const [checkTicketLoading, setCheckTicketLoading] = useState(false);
+  const [checkTicketResult, setCheckTicketResult] = useState<{name: string, status: string, code: string} | null>(null);
+  const [checkTicketError, setCheckTicketError] = useState('');
+
   const [isConfirming, setIsConfirming] = useState(false);
   const [expandedPayment, setExpandedPayment] = useState<string | null>(null);
   const [wizardStep, setWizardStep] = useState(1);
@@ -82,6 +88,53 @@ export default function App() {
   const togglePayment = (method: string) => {
     setExpandedPayment(prev => prev === method ? null : method);
     setPreferences(prev => ({ ...prev, paymentMethod: method }));
+  };
+
+  const handleCheckTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckTicketError('');
+    setCheckTicketResult(null);
+    
+    const trimmedCode = checkTicketCode.trim().toUpperCase();
+    if (!/^RAM-2026-[A-Z]{2}\d{3}$/.test(trimmedCode)) {
+      setCheckTicketError('Invalid code format. Please use RAM-2026-XXXXX format.');
+      return;
+    }
+
+    setCheckTicketLoading(true);
+    try {
+      const response = await fetch('https://docs.google.com/spreadsheets/d/1XCoWyi17026og4sc0mrTklvz2fl328iB78ON2SfVN1A/export?format=csv');
+      const csvText = await response.text();
+      
+      const rows = csvText.split('\n');
+      let targetRow = null;
+      
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i].includes(trimmedCode)) {
+          const cols = rows[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+          targetRow = cols;
+          break;
+        }
+      }
+      
+      if (targetRow) {
+        const header = rows[0].split(',').map(c => c.replace(/^"|"$/g, '').trim().toLowerCase());
+        const nameIndex = header.indexOf('name');
+        const statusIndex = header.length - 1;
+        
+        setCheckTicketResult({
+          name: nameIndex !== -1 ? targetRow[nameIndex] : targetRow[2] || 'Unknown',
+          status: targetRow[statusIndex] || 'Unknown',
+          code: trimmedCode
+        });
+      } else {
+        setCheckTicketError('Ticket not found. Please check your code.');
+      }
+    } catch (err) {
+      setCheckTicketError('Error fetching data. Please try again later.');
+    } finally {
+      setCheckTicketLoading(false);
+    }
   };
 
   // Load admin settings on mount
@@ -213,7 +266,7 @@ export default function App() {
       setIsConfirming(true);
       try {
         // Save to Google Sheets
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzK_rOi99YHv7f7rhu_DQNa2OmFcA71wYj_ia6fP_ZzVWzYtTbpusTGfCKKjbBGu2rYTQ/exec";
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzD3-8pU2wOaNMCrT3IiDqlck8j0UNHX5OVOfqlQsBJKTxgCp7cpW5sYNk2HEsIIhyfsw/exec";
         if (!GOOGLE_SCRIPT_URL) {
           alert('Google Sheets URL is not configured.');
           setIsConfirming(false);
@@ -340,6 +393,13 @@ export default function App() {
                     className="w-full h-[55px] mt-6 bg-gradient-to-r from-ramadan-primary to-[#7D3C98] text-white font-bold text-[18px] rounded-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_8px_25px_rgba(91,44,111,0.4)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
                   >
                     ✅ Verify & Continue
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setShowCheckTicketModal(true)}
+                    className="w-full h-[55px] mt-4 bg-white text-ramadan-primary border-2 border-ramadan-primary font-bold text-[18px] rounded-xl cursor-pointer transition-all duration-300 hover:bg-ramadan-primary/5 active:scale-95"
+                  >
+                    🔍 Check Ticket Status
                   </button>
                 </form>
               </div>
@@ -912,6 +972,99 @@ export default function App() {
                 >
                   Close
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Check Ticket Modal */}
+      <AnimatePresence>
+        {showCheckTicketModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden relative"
+            >
+              <div className="bg-gradient-to-r from-ramadan-primary to-[#7D3C98] p-6 text-center text-white relative overflow-hidden">
+                <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/arabesque.png')]"></div>
+                <h2 className="text-2xl font-english-serif relative z-10">Check Ticket Status</h2>
+                <button 
+                  onClick={() => {
+                    setShowCheckTicketModal(false);
+                    setCheckTicketResult(null);
+                    setCheckTicketCode('');
+                    setCheckTicketError('');
+                  }}
+                  className="absolute top-4 right-4 text-white/80 hover:text-white z-20 text-2xl leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+              
+              <div className="p-6">
+                {!checkTicketResult ? (
+                  <form onSubmit={handleCheckTicket} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Invitation Code</label>
+                      <div className="relative">
+                        <Ticket className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                        <input 
+                          type="text" 
+                          value={checkTicketCode}
+                          onChange={(e) => setCheckTicketCode(e.target.value.toUpperCase())}
+                          placeholder="RAM-2026-XXXXX"
+                          className="w-full h-[55px] pl-[45px] pr-4 rounded-xl border-2 border-[#e0e0e0] focus:border-ramadan-secondary focus:outline-none focus:shadow-[0_0_15px_rgba(212,175,55,0.2)] transition-all text-[16px] uppercase"
+                          required
+                        />
+                      </div>
+                    </div>
+                    {checkTicketError && (
+                      <div className="text-red-500 text-sm font-medium text-center">
+                        {checkTicketError}
+                      </div>
+                    )}
+                    <button 
+                      type="submit"
+                      disabled={!checkTicketCode || checkTicketLoading}
+                      className="w-full btn-primary py-3 flex justify-center items-center gap-2 disabled:opacity-50"
+                    >
+                      {checkTicketLoading ? '⏳ Checking...' : 'Check Status'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="text-center space-y-4">
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-left space-y-2">
+                      <p className="text-sm text-gray-500">Name: <span className="font-semibold text-gray-900">{checkTicketResult.name}</span></p>
+                      <p className="text-sm text-gray-500">Code: <span className="font-mono font-semibold text-gray-900">{checkTicketResult.code}</span></p>
+                      <p className="text-sm text-gray-500">Status: <span className={`font-semibold ${checkTicketResult.status.toLowerCase().includes('paid') || checkTicketResult.status.toLowerCase().includes('confirmed') ? 'text-green-600' : 'text-orange-500'}`}>{checkTicketResult.status}</span></p>
+                    </div>
+                    
+                    <div className="flex justify-center py-4">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`Name: ${checkTicketResult.name}\nCode: ${checkTicketResult.code}\nStatus: ${checkTicketResult.status}`)}`} 
+                        alt="Ticket QR Code" 
+                        className="w-48 h-48 rounded-lg shadow-md"
+                      />
+                    </div>
+                    
+                    <p className="text-sm text-gray-500">Screenshot this QR code to present at the event.</p>
+                    
+                    <button 
+                      onClick={() => setCheckTicketResult(null)}
+                      className="w-full py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+                    >
+                      Check Another Code
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>
